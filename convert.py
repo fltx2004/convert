@@ -50,18 +50,39 @@ def get_audio_format(video_file):
         print(f"解析文件 '{video_file}' 音频格式时出错：{e}")
         return None
 
-def convert_to_mp3(input_file, output_file):
+def extract_audio_to_m4a(input_file, output_file):
     """
-    将音频部分转换为 MP3 格式。
+    提取音频并封装为 M4A 格式。
     """
     try:
         subprocess.run(
             [
                 "ffmpeg",
-                "-i", input_file,        # 输入文件
-                "-vn",                   # 去掉视频流
-                "-acodec", "libmp3lame", # 指定 MP3 编码器
-                "-q:a", "2",             # 设置编码质量（2 表示高质量）
+                "-i", input_file,           # 输入文件
+                "-vn",                      # 去掉视频流
+                "-acodec", "copy",          # 保持原始音频格式
+                output_file                 # 输出为 M4A 文件
+            ],
+            check=True
+        )
+        print(f"已提取并封装为 M4A: '{input_file}' -> '{output_file}'")
+        return True
+    except subprocess.CalledProcessError as e:
+        print(f"提取音频失败 '{input_file}'：{e}")
+        return False
+
+def convert_to_mp3(input_file, output_file):
+    """
+    如果无法直接提取音频，则将音频部分重新编码为 MP3。
+    """
+    try:
+        subprocess.run(
+            [
+                "ffmpeg",
+                "-i", input_file,
+                "-vn",                  # 去掉视频流
+                "-acodec", "libmp3lame",
+                "-q:a", "2",            # 设置编码质量（2 表示高质量）
                 output_file
             ],
             check=True
@@ -72,59 +93,24 @@ def convert_to_mp3(input_file, output_file):
         print(f"转换失败 '{input_file}'：{e}")
         return False
 
-def extract_audio(input_file, output_file):
-    """
-    尝试直接提取保留原始音频格式。
-    """
-    try:
-        subprocess.run(
-            [
-                "ffmpeg",
-                "-i", input_file,       # 输入文件
-                "-vn",                  # 去掉视频流
-                "-acodec", "copy",      # 直接复制音频流
-                output_file
-            ],
-            check=True
-        )
-        print(f"已提取并保留原始音频格式: '{input_file}' -> '{output_file}'")
-        return True
-    except subprocess.CalledProcessError as e:
-        print(f"提取音频失败 '{input_file}'：{e}")
-        return False
-
 def process_file(file_name):
     """
-    处理单个文件，根据格式决定处理方法。
+    处理单个文件，提取音频并直接保存为 M4A 格式。
+    如果失败则尝试转为 MP3。
     """
-    base_name, ext = os.path.splitext(file_name)  # 分离文件名和扩展名
-    output_audio_path = os.path.join(output_dir, f"{base_name}.mp3")
+    base_name = os.path.splitext(file_name)[0]  # 分离文件名和扩展名
+    output_audio_path_m4a = os.path.join(output_dir, f"{base_name}.m4a")
+    output_audio_path_mp3 = os.path.join(output_dir, f"{base_name}.mp3")
     
     # 检查文件有效性
     if not is_valid_media_file(file_name):
         print(f"文件 '{file_name}' 无效，跳过处理...")
         return
     
-    # 获取音频流格式
-    audio_format = get_audio_format(file_name)
-
-    if audio_format:
-        if audio_format == "cook":
-            # 针对 'cook' 音频，转换为 MP3
-            print(f"检测到 'cook' 格式音频: {file_name}，开始转换为 MP3...")
-            convert_to_mp3(file_name, output_audio_path)
-        else:
-            # 对其他音频，尝试直接提取为原格式
-            output_format_path = os.path.join(output_dir, f"{base_name}.{audio_format}")
-            print(f"检测到 '{audio_format}' 格式音频: {file_name}，尝试直接提取...")
-            if not extract_audio(file_name, output_format_path):
-                print(f"直接提取音频失败 '{file_name}'，改为转 MP3。")
-                convert_to_mp3(file_name, output_audio_path)
-    else:
-        # 如果无法识别音频格式，尝试直接转为 MP3
-        print(f"无法识别 '{file_name}' 的音频格式，尝试直接转换为 MP3...")
-        convert_to_mp3(file_name, output_audio_path)
-
+    # 提取音频并封装为 M4A
+    if not extract_audio_to_m4a(file_name, output_audio_path_m4a):
+        print(f"直接提取音频失败 '{file_name}'，改为转 MP3。")
+        convert_to_mp3(file_name, output_audio_path_mp3)
 
 # 遍历当前目录中的所有文件
 for file_name in os.listdir("."):
