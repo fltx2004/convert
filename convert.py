@@ -122,26 +122,36 @@ def process_file(file_name):
         print(f"文件 '{file_name}' 无法找到有效的音频流，跳过处理...")
         return
 
+    # 判断是单音轨还是多音轨
+    is_single_track = len(audio_streams) == 1
+
     for stream_index, audio_format in audio_streams:
+        if is_single_track:
+            # 如果只有一个音轨，不附加 `_trackXXX`
+            output_file_base = base_name
+        else:
+            # 如果有多个音轨，附加 `_trackXXX`
+            output_file_base = f"{base_name}_track{stream_index}"
+
         if audio_format == "aac":
             # 针对 'aac' 音频，直接提取为 m4a
-            output_format_path = os.path.join(output_dir, f"{base_name}_track{stream_index}.m4a")
+            output_format_path = os.path.join(output_dir, f"{output_file_base}.m4a")
             print(f"检测到流 {stream_index} 是 'aac': {file_name}，直接提取为 m4a...")
             if not extract_audio_by_stream(file_name, stream_index, audio_format, output_format_path):
                 print(f"提取 'aac' 音轨失败，将尝试转换为 MP3...")
-                output_mp3_path = os.path.join(output_dir, f"{base_name}_track{stream_index}.mp3")
+                output_mp3_path = os.path.join(output_dir, f"{output_file_base}.mp3")
                 convert_to_mp3(file_name, stream_index, output_mp3_path)
         else:
             # 对非 'aac' 格式，尝试提取原始音频格式
-            output_format_path = os.path.join(output_dir, f"{base_name}_track{stream_index}.{audio_format}")
+            output_format_path = os.path.join(output_dir, f"{output_file_base}.{audio_format}")
             print(f"检测到流 {stream_index} 格式为 '{audio_format}': {file_name}，尝试直接提取...")
             if not extract_audio_by_stream(file_name, stream_index, audio_format, output_format_path):
                 print(f"直接提取音轨 {stream_index} 失败，检查文件并转换为 MP3...")
                 # 如果提取失败并生成了空文件，则删除
                 if delete_empty_file(output_format_path):
-                    print(f"音轨 {stream_index} 的提取失败文件已删除。")
+                    print(f"音轨 {stream_index} 的提取失败的文件已删除。")
                 # 转换流为 MP3
-                output_mp3_path = os.path.join(output_dir, f"{base_name}_track{stream_index}.mp3")
+                output_mp3_path = os.path.join(output_dir, f"{output_file_base}.mp3")
                 convert_to_mp3(file_name, stream_index, output_mp3_path)
 
 # 遍历当前目录中的所有文件
