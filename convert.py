@@ -91,17 +91,30 @@ def convert_to_mp3(input_file, stream_index, output_file):
         print(f"转换失败 [{stream_index}] '{input_file}'：{e}")
         return False
 
+def delete_empty_file(file_path):
+    """
+    如果文件大小为 0，删除该文件。
+    """
+    if os.path.exists(file_path) and os.path.getsize(file_path) == 0:
+        try:
+            os.remove(file_path)
+            print(f"已删除大小为 0 的文件: {file_path}")
+            return True
+        except Exception as e:
+            print(f"无法删除空文件 '{file_path}'：{e}")
+    return False
+
 def process_file(file_name):
     """
     处理单个文件，根据音频流格式决定处理方法。
     """
     base_name, ext = os.path.splitext(file_name)  # 分离文件名和扩展名
-    
+
     # 检查文件有效性
     if not is_valid_media_file(file_name):
         print(f"文件 '{file_name}' 无效，跳过处理...")
         return
-    
+
     # 获取音频流信息
     audio_streams = get_audio_streams(file_name)
 
@@ -114,14 +127,20 @@ def process_file(file_name):
             # 针对 'aac' 音频，直接提取为 m4a
             output_format_path = os.path.join(output_dir, f"{base_name}_track{stream_index}.m4a")
             print(f"检测到流 {stream_index} 是 'aac': {file_name}，直接提取为 m4a...")
-            extract_audio_by_stream(file_name, stream_index, audio_format, output_format_path)
+            if not extract_audio_by_stream(file_name, stream_index, audio_format, output_format_path):
+                print(f"提取 'aac' 音轨失败，将尝试转换为 MP3...")
+                output_mp3_path = os.path.join(output_dir, f"{base_name}_track{stream_index}.mp3")
+                convert_to_mp3(file_name, stream_index, output_mp3_path)
         else:
             # 对非 'aac' 格式，尝试提取原始音频格式
             output_format_path = os.path.join(output_dir, f"{base_name}_track{stream_index}.{audio_format}")
             print(f"检测到流 {stream_index} 格式为 '{audio_format}': {file_name}，尝试直接提取...")
             if not extract_audio_by_stream(file_name, stream_index, audio_format, output_format_path):
-                print(f"直接提取音轨 {stream_index} 失败，转换为 MP3...")
-                # 如果提取失败，转换为 MP3
+                print(f"直接提取音轨 {stream_index} 失败，检查文件并转换为 MP3...")
+                # 如果提取失败并生成了空文件，则删除
+                if delete_empty_file(output_format_path):
+                    print(f"音轨 {stream_index} 的提取失败文件已删除。")
+                # 转换流为 MP3
                 output_mp3_path = os.path.join(output_dir, f"{base_name}_track{stream_index}.mp3")
                 convert_to_mp3(file_name, stream_index, output_mp3_path)
 
