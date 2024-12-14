@@ -25,92 +25,105 @@ def is_valid_media_file(file_name):
         print(f"检查媒体文件有效性时出错：{e}")
         return False
 
-def get_audio_format(video_file):
+def get_audio_streams(video_file):
     """
-    使用 ffprobe 获取视频文件中的音频流格式。
+    使用 ffprobe 获取视频文件中的所有音频流信息。
+    返回音频流的索引及其格式。
     """
     try:
         result = subprocess.run(
-            ["ffprobe", "-v", "error", "-select_streams", "a:0", "-show_entries", "stream=codec_name", "-of", "json", video_file],
+            ["ffprobe", "-v", "error", "-select_streams", "a", "-show_entries", "stream=index,codec_name", "-of", "json", video_file],
             stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True
         )
         probe_data = json.loads(result.stdout)
         if "streams" in probe_data and probe_data["streams"]:
-            return probe_data["streams"][0]["codec_name"]
+            return [(stream["index"], stream["codec_name"]) for stream in probe_data["streams"]]
         else:
             print(f"文件 '{video_file}' 不包含音频流！")
-            return None
+            return []
     except json.JSONDecodeError:
         print(f"无法分析文件 '{video_file}' 的格式，可能不是有效的音频/视频文件。")
-        return None
-    except IndexError:
-        print(f"文件 '{video_file}' 中没有音频流！")
-        return None
+        return []
     except Exception as e:
         print(f"解析文件 '{video_file}' 音频格式时出错：{e}")
-        return None
+        return []
 
-def extract_audio_to_m4a(input_file, output_file):
+def extract_audio_by_stream(input_file, stream_index, audio_format, output_file):
     """
-    提取音频并封装为 M4A 格式。
+    直接提取指定音频流，并生成对应的音频文件。
     """
     try:
         subprocess.run(
             [
                 "ffmpeg",
-                "-i", input_file,           # 输入文件
-                "-vn",                      # 去掉视频流
-                "-acodec", "copy",          # 保持原始音频格式
-                output_file                 # 输出为 M4A 文件
+                "-i", input_file,       # 输入文件
+                "-map", f"0:{stream_index}",  # 仅提取指定音频流
+                "-acodec", "copy",      # 直接复制音频流
+                output_file
             ],
             check=True
         )
-        print(f"已提取并封装为 M4A: '{input_file}' -> '{output_file}'")
+        print(f"已提取音轨 {stream_index} 并保留格式 '{audio_format}': '{input_file}' -> '{output_file}'")
         return True
     except subprocess.CalledProcessError as e:
-        print(f"提取音频失败 '{input_file}'：{e}")
+        print(f"提取音轨 {stream_index} 失败 '{input_file}'：{e}")
         return False
 
-def convert_to_mp3(input_file, output_file):
+def convert_to_mp3(input_file, stream_index, output_file):
     """
-    如果无法直接提取音频，则将音频部分重新编码为 MP3。
+    提取指定音频流并转换为 MP3 格式。
     """
     try:
         subprocess.run(
             [
                 "ffmpeg",
-                "-i", input_file,
-                "-vn",                  # 去掉视频流
-                "-acodec", "libmp3lame",
+                "-i", input_file,       # 输入文件
+                "-map", f"0:{stream_index}",  # 仅提取指定音频流
+                "-acodec", "libmp3lame", # 指定 MP3 编码器
                 "-q:a", "2",            # 设置编码质量（2 表示高质量）
                 output_file
             ],
             check=True
         )
-        print(f"已转换为 MP3: '{input_file}' -> '{output_file}'")
+        print(f"已转换为 MP3: [{stream_index}] '{input_file}' -> '{output_file}'")
         return True
     except subprocess.CalledProcessError as e:
-        print(f"转换失败 '{input_file}'：{e}")
+        print(f"转换失败 [{stream_index}] '{input_file}'：{e}")
         return False
 
 def process_file(file_name):
     """
-    处理单个文件，提取音频并直接保存为 M4A 格式。
-    如果失败则尝试转为 MP3。
+    处理单个文件，根据音频流格式决定处理方法。
     """
-    base_name = os.path.splitext(file_name)[0]  # 分离文件名和扩展名
-    output_audio_path_m4a = os.path.join(output_dir, f"{base_name}.m4a")
-    output_audio_path_mp3 = os.path.join(output_dir, f"{base_name}.mp3")
+    base_name, ext = os.path.splitext(file_name)  # 分离文件名和扩展名
     
     # 检查文件有效性
     if not is_valid_media_file(file_name):
         print(f"文件 '{file_name}' 无效，跳过处理...")
         return
     
-    # 提取音频并封装为 M4A
-    if not extract_audio_to_m4a(file_name, output_audio_path_m4a):
-        print(f"直接提取音频失败 '{file_name}'，改为转 MP3。")
-        convert_to_mp3(file_name, output_audio_path_mp3)
+    # 获取音频流信息
+    audio_streams = get_audio_streams(file_name)
+
+    if not audio_streams:
+        print(f"文件 '{file_name}' 无法找到有效的音频流，跳过处理...")
+        return
+
+    for stream_index, audio_format in audio_streams:
+        if audio_format == "aac":
+            # 针对 'aac' 音频，直接提取为 m4a
+            output_format_path = os.path.join(output_dir, f"{base_name}_track{stream_index}.m4a")
+            print(f"检测到流 {stream_index} 是 'aac': {file_name}，直接提取为 m4a...")
+            extract_audio_by_stream(file_name, stream_index, audio_format, output_format_path)
+        else:
+            # 对非 'aac' 格式，尝试提取原始音频格式
+            output_format_path = os.path.join(output_dir, f"{base_name}_track{stream_index}.{audio_format}")
+            print(f"检测到流 {stream_index} 格式为 '{audio_format}': {file_name}，尝试直接提取...")
+            if not extract_audio_by_stream(file_name, stream_index, audio_format, output_format_path):
+                print(f"直接提取音轨 {stream_index} 失败，转换为 MP3...")
+                # 如果提取失败，转换为 MP3
+                output_mp3_path = os.path.join(output_dir, f"{base_name}_track{stream_index}.mp3")
+                convert_to_mp3(file_name, stream_index, output_mp3_path)
 
 # 遍历当前目录中的所有文件
 for file_name in os.listdir("."):
