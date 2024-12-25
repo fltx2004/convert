@@ -3,11 +3,10 @@ name: Build and Release Python exe
 on:
   push:
     tags:
-      - 'v*' # 当推送标签时运行
+      - 'v*'
 
 jobs:
   build:
-    # 使用 Ubuntu 系统运行 Actions
     runs-on: ubuntu-latest
 
     steps:
@@ -19,48 +18,72 @@ jobs:
       with:
         python-version: '3.10'
 
-    - name: Install Wine and prerequisites
+    - name: Install Wine and prerequisites from WineHQ
       run: |
+        # Add WineHQ repository for the latest stable release
+        sudo dpkg --add-architecture i386
+        sudo mkdir -pm755 /etc/apt/keyrings
+        wget -O /etc/apt/keyrings/winehq-archive.key https://dl.winehq.org/wine-builds/winehq.key
+        wget -NP /etc/apt/sources.list.d https://dl.winehq.org/wine-builds/ubuntu/dists/noble/winehq-noble.sources
+        
+        # Update and install WineHQ stable
         sudo apt-get update
-        sudo apt-get install -y wine-stable wine32 p7zip-full
+        sudo apt-get install -y --install-recommends winehq-stable
 
-    - name: Install dependencies
-      run: |
-        python -m pip install --upgrade pip
-        pip install pyinstaller  # 使用 pyinstaller 进行 py -> exe
+        # Install helper tools (7zip and related)
+        sudo apt-get install -y p7zip-full
 
-    - name: Build Python script to Windows exe
-      # 使用 Wine 运行 PyInstaller 并生成 Windows 的可执行文件
+        # Confirm Wine installation
+        wine --version
+
+    - name: Install PyInstaller in Wine environment
       run: |
-        WINEARCH=win32 WINEPREFIX=/tmp/wine32 wine cmd.exe /c echo "Windows environment preparation complete"
-        WINEARCH=win32 WINEPREFIX=/tmp/wine32 wine python -m pip install pyinstaller
-        WINEARCH=win32 WINEPREFIX=/tmp/wine32 wine pyinstaller --onefile convert.py
+        # Setup Wine environment
+        WINEARCH=win32 WINEPREFIX=/tmp/wine32 wineboot --init
+
+        # Install Python and PyInstaller in Wine
+        wget https://www.python.org/ftp/python/3.10.9/python-3.10.9.exe -O /tmp/python.exe
+        WINEPREFIX=/tmp/wine32 wine /tmp/python.exe /quiet InstallAllUsers=1 PrependPath=1
+
+        # Verify Python installation in Wine
+        WINEPREFIX=/tmp/wine32 wine python --version
+
+        # Install PyInstaller
+        WINEPREFIX=/tmp/wine32 wine python -m pip install --upgrade pip
+        WINEPREFIX=/tmp/wine32 wine python -m pip install pyinstaller
+
+    - name: Build Python script to exe
+      run: |
+        # Use Wine to build the Windows executable
+        WINEPREFIX=/tmp/wine32 wine pyinstaller --onefile convert.py
 
     - name: Download FFmpeg and FFprobe binaries for Windows
       run: |
-        # 下载 FFmpeg 和 FFprobe 的 Windows 预编译版本
+        # Download FFmpeg and FFprobe Windows executables
         wget -O ffmpeg.zip https://www.gyan.dev/ffmpeg/builds/ffmpeg-release-essentials.zip
         
-        # 解压 FFmpeg 文件
-        mkdir ffmpeg
+        # Extract the required binaries
+        mkdir -p ffmpeg
         unzip ffmpeg.zip -d ffmpeg
         
-        # 移动文件到当前工作目录
+        # Move ffmpeg.exe and ffprobe.exe to the working directory
         mv ffmpeg/**/ffmpeg.exe .
         mv ffmpeg/**/ffprobe.exe .
 
     - name: Prepare for release (zip the package)
       run: |
-        mkdir release
-        mv dist/convert.exe release/          # 移动编译后的主程序到 release 目录
-        mv ffmpeg.exe release/               # 移动 ffmpeg.exe 到 release
-        mv ffprobe.exe release/              # 移动 ffprobe.exe 到 release
-        cd release
-        7z a -tzip ../convert.zip *          # 通过 7zip 工具，压缩为 convert.zip
+        # Create a release directory and move files into it
+        mkdir -p release
+        mv dist/convert.exe release/
+        mv ffmpeg.exe release/
+        mv ffprobe.exe release/
+
+        # Compress release files into a ZIP archive
+        7z a -tzip release.zip ./release/*
 
     - name: Upload Release to GitHub
       uses: softprops/action-gh-release@v1
       with:
-        files: convert.zip
+        files: release.zip
       env:
         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
