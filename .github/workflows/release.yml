@@ -3,7 +3,7 @@ name: Build and Release Python exe
 on:
   push:
     tags:
-      - 'v*'  # 当推送标签时运行
+      - 'v*' # 当推送标签时运行
 
 jobs:
   build:
@@ -27,20 +27,35 @@ jobs:
       run: pyinstaller --onefile convert.py
 
     - name: Download ffmpeg and ffprobe
+      shell: powershell  # 确保使用 PowerShell
       run: |
-        # 下载 ffmpeg 和 ffprobe 的 Windows 版本，并解压
-        curl -L https://www.gyan.dev/ffmpeg/builds/ffmpeg-release-essentials.zip -o ffmpeg.zip
-        unzip -j ffmpeg.zip "*.exe" -d .  
-      shell: bash
+        # 下载 ffmpeg 和 ffprobe 的 Windows 版本
+        Write-Host "Downloading ffmpeg and ffprobe..."
+        Invoke-WebRequest -Uri https://www.gyan.dev/ffmpeg/builds/ffmpeg-release-essentials.zip -OutFile ffmpeg.zip
+        
+        # 解压文件，并提取所有的 *.exe
+        Write-Host "Extracting ffmpeg and ffprobe executables..."
+        Expand-Archive -Path ffmpeg.zip -DestinationPath . -Force
+        Get-ChildItem -Path . -Recurse -Filter *.exe | ForEach-Object {
+          Move-Item -Path $_.FullName -Destination .
+        }
+
+        # 确认 ffmpeg 和 ffprobe 是否成功下载
+        if (!(Test-Path -Path "ffmpeg.exe")) {
+          throw "ffmpeg.exe not found!"
+        }
+        if (!(Test-Path -Path "ffprobe.exe")) {
+          throw "ffprobe.exe not found!"
+        }
 
     - name: Prepare for release (zip the package)
       run: |
         mkdir release
-        mv dist/convert.exe release/  # 将主程序移动到 release 目录
-        mv ffmpeg.exe release/    # 将 ffmpeg.exe 移动到 release 目录
-        mv ffprobe.exe release/   # 将 ffprobe.exe 移动到 release 目录
+        move dist/convert.exe release/  # 将主程序移动到 release 目录
+        move ffmpeg.exe release/       # 将 ffmpeg.exe 移动到 release 目录
+        move ffprobe.exe release/      # 将 ffprobe.exe 移动到 release 目录
         cd release
-        zip -r ../convert.zip .  # 压缩所有内容到 convert.zip
+        powershell Compress-Archive -Path * -DestinationPath ../convert.zip  # 压缩内容为 convert.zip
 
     - name: Upload Release to GitHub
       uses: softprops/action-gh-release@v1
