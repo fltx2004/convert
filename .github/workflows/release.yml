@@ -7,7 +7,8 @@ on:
 
 jobs:
   build:
-    runs-on: windows-latest
+    # 使用 Ubuntu 系统运行 Actions
+    runs-on: ubuntu-latest
 
     steps:
     - name: Check out source code
@@ -18,44 +19,44 @@ jobs:
       with:
         python-version: '3.10'
 
+    - name: Install Wine and prerequisites
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y wine-stable wine32 p7zip-full
+
     - name: Install dependencies
       run: |
         python -m pip install --upgrade pip
         pip install pyinstaller  # 使用 pyinstaller 进行 py -> exe
 
-    - name: Build Python script to exe
-      run: pyinstaller --onefile convert.py
-
-    - name: Download ffmpeg and ffprobe
-      shell: powershell  # 确保使用 PowerShell
+    - name: Build Python script to Windows exe
+      # 使用 Wine 运行 PyInstaller 并生成 Windows 的可执行文件
       run: |
-        # 下载 ffmpeg 和 ffprobe 的 Windows 版本
-        Write-Host "Downloading ffmpeg and ffprobe..."
-        Invoke-WebRequest -Uri https://www.gyan.dev/ffmpeg/builds/ffmpeg-release-essentials.zip -OutFile ffmpeg.zip
-        
-        # 解压文件，并提取所有的 *.exe
-        Write-Host "Extracting ffmpeg and ffprobe executables..."
-        Expand-Archive -Path ffmpeg.zip -DestinationPath . -Force
-        Get-ChildItem -Path . -Recurse -Filter *.exe | ForEach-Object {
-          Move-Item -Path $_.FullName -Destination .
-        }
+        WINEARCH=win32 WINEPREFIX=/tmp/wine32 wine cmd.exe /c echo "Windows environment preparation complete"
+        WINEARCH=win32 WINEPREFIX=/tmp/wine32 wine python -m pip install pyinstaller
+        WINEARCH=win32 WINEPREFIX=/tmp/wine32 wine pyinstaller --onefile convert.py
 
-        # 确认 ffmpeg 和 ffprobe 是否成功下载
-        if (!(Test-Path -Path "ffmpeg.exe")) {
-          throw "ffmpeg.exe not found!"
-        }
-        if (!(Test-Path -Path "ffprobe.exe")) {
-          throw "ffprobe.exe not found!"
-        }
+    - name: Download FFmpeg and FFprobe binaries for Windows
+      run: |
+        # 下载 FFmpeg 和 FFprobe 的 Windows 预编译版本
+        wget -O ffmpeg.zip https://www.gyan.dev/ffmpeg/builds/ffmpeg-release-essentials.zip
+        
+        # 解压 FFmpeg 文件
+        mkdir ffmpeg
+        unzip ffmpeg.zip -d ffmpeg
+        
+        # 移动文件到当前工作目录
+        mv ffmpeg/**/ffmpeg.exe .
+        mv ffmpeg/**/ffprobe.exe .
 
     - name: Prepare for release (zip the package)
       run: |
         mkdir release
-        move dist/convert.exe release/  # 将主程序移动到 release 目录
-        move ffmpeg.exe release/       # 将 ffmpeg.exe 移动到 release 目录
-        move ffprobe.exe release/      # 将 ffprobe.exe 移动到 release 目录
+        mv dist/convert.exe release/          # 移动编译后的主程序到 release 目录
+        mv ffmpeg.exe release/               # 移动 ffmpeg.exe 到 release
+        mv ffprobe.exe release/              # 移动 ffprobe.exe 到 release
         cd release
-        powershell Compress-Archive -Path * -DestinationPath ../convert.zip  # 压缩内容为 convert.zip
+        7z a -tzip ../convert.zip *          # 通过 7zip 工具，压缩为 convert.zip
 
     - name: Upload Release to GitHub
       uses: softprops/action-gh-release@v1
