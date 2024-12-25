@@ -30,7 +30,7 @@ jobs:
       run: |
         # 下载 ffmpeg 和 ffprobe 的 Windows 版本，并解压
         curl -L https://www.gyan.dev/ffmpeg/builds/ffmpeg-release-essentials.zip -o ffmpeg.zip
-    unzip -j ffmpeg.zip "*.exe" -d .  # 解压所有 .exe 文件到当前目录
+        unzip -j ffmpeg.zip "*.exe" -d .  
       shell: bash
 
     - name: Prepare for release (zip the package)
